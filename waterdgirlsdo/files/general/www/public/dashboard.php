@@ -5,7 +5,14 @@ require_once 'ha_api.php';
 
 $pdo = initializeDatabase();
 
-// Handle Actions (Prime from Dashboard)
+function calculateVPD($temp, $humidity) {
+    if ($temp === null || $humidity === null) return null;
+    $vp_sat = 0.61078 * exp((17.27 * floatval($temp)) / (floatval($temp) + 237.3));
+    $vpd = $vp_sat * (1 - floatval($humidity) / 100);
+    return round($vpd, 3);
+}
+
+// Handle Actions (Prime)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'prime') {
     $zone_id = $_POST['zone_id'];
     $stmt = $pdo->prepare("SELECT pump_entity_id, solenoid_entity_id FROM Zones WHERE id = ?");
@@ -18,53 +25,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         ha_set_state($z['pump_entity_id'], 'off');
         if ($z['solenoid_entity_id']) ha_set_state($z['solenoid_entity_id'], 'off');
     }
-    header("Location: dashboard.php");
-    exit;
+    header("Location: dashboard.php"); exit;
 }
 
-// Current Time
-$now = new DateTime();
-$currentTime = $now->format('H:i');
+// Fetch HA States for Sensors
+$ha_entities = ha_get_entities();
+$entities_map = [];
+foreach ($ha_entities as $e) { $entities_map[$e['entity_id']] = $e['state']; }
 
-// Get Next Event
-$stmt = $pdo->prepare("SELECT e.*, z.name as zone_name, r.name as room_name 
-                      FROM IrrigationEvents e 
-                      JOIN Zones z ON e.zone_id = z.id 
-                      JOIN Rooms r ON z.room_id = r.id 
-                      WHERE e.enabled = 1 AND e.start_time > ? 
-                      ORDER BY e.start_time ASC LIMIT 1");
-$stmt->execute([$currentTime]);
-$nextEvent = $stmt->fetch(PDO::FETCH_ASSOC);
-
-if (!$nextEvent) {
-    $stmt = $pdo->prepare("SELECT e.*, z.name as zone_name, r.name as room_name 
-                          FROM IrrigationEvents e 
-                          JOIN Zones z ON e.zone_id = z.id 
-                          JOIN Rooms r ON z.room_id = r.id 
-                          WHERE e.enabled = 1 
-                          ORDER BY e.start_time ASC LIMIT 1");
-    $stmt->execute();
-    $nextEvent = $stmt->fetch(PDO::FETCH_ASSOC);
+// Room & Sensor Analytics
+$rooms = $pdo->query("SELECT * FROM Rooms ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$room_stats = [];
+foreach ($rooms as $room) {
+    $temp = isset($entities_map[$room['temp_sensor_id']]) ? $entities_map[$room['temp_sensor_id']] : null;
+    $hum = isset($entities_map[$room['humidity_sensor_id']]) ? $entities_map[$room['humidity_sensor_id']] : null;
+    $room_stats[$room['id']] = [
+        'temp' => $temp,
+        'hum' => $hum,
+        'vpd' => calculateVPD($temp, $hum),
+        'lights' => ($room['lights_on'] && $room['lights_off']) ? $room['lights_on'].' - '.$room['lights_off'] : 'Not Set'
+    ];
 }
 
-// Get Last Run
-$lastRun = $pdo->query("SELECT l.*, z.name as zone_name, r.name as room_name 
-                       FROM IrrigationLogs l
-                       JOIN Zones z ON l.zone_id = z.id
-                       JOIN Rooms r ON z.room_id = r.id
-                       ORDER BY l.start_time DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+// Global Volume Stats
+$stats1d = $pdo->query("SELECT SUM(volume_ml) FROM IrrigationLogs WHERE date(start_time) = date('now')")->fetchColumn() ?: 0;
+$stats7d = $pdo->query("SELECT SUM(volume_ml) FROM IrrigationLogs WHERE date(start_time) >= date('now', '-7 days')")->fetchColumn() ?: 0;
+$stats30d = $pdo->query("SELECT SUM(volume_ml) FROM IrrigationLogs WHERE date(start_time) >= date('now', '-30 days')")->fetchColumn() ?: 0;
 
-// Volume Stats
-$totalVolumeTodayML = $pdo->query("SELECT SUM(volume_ml) FROM IrrigationLogs WHERE date(start_time) = date('now')")->fetchColumn() ?: 0;
-$totalLitresToday = $totalVolumeTodayML / 1000;
+// Graph Data (Last 7 Days)
+$graph_labels = []; $graph_data = [];
+for ($i=6; $i>=0; $i--) {
+    $date = date('Y-m-d', strtotime("-$i days"));
+    $vol = $pdo->prepare("SELECT SUM(volume_ml) FROM IrrigationLogs WHERE date(start_time) = ?");
+    $vol->execute([$date]);
+    $graph_labels[] = date('D', strtotime($date));
+    $graph_data[] = round(($vol->fetchColumn() ?: 0) / 1000, 2);
+}
 
-$p1TodayML = $pdo->query("SELECT SUM(volume_ml) FROM IrrigationLogs WHERE date(start_time) = date('now') AND event_type = 'P1'")->fetchColumn() ?: 0;
-$p2TodayML = $pdo->query("SELECT SUM(volume_ml) FROM IrrigationLogs WHERE date(start_time) = date('now') AND event_type = 'P2'")->fetchColumn() ?: 0;
+// Next Event
+$now_time = date('H:i');
+$stmt = $pdo->prepare("SELECT e.*, z.name as zone_name, r.name as room_name FROM IrrigationEvents e JOIN Zones z ON e.zone_id = z.id JOIN Rooms r ON z.room_id = r.id WHERE e.enabled = 1 AND e.start_time > ? ORDER BY e.start_time ASC LIMIT 1");
+$stmt->execute([$now_time]);
+$next = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$weeklyVolumeML = $pdo->query("SELECT SUM(volume_ml) FROM IrrigationLogs WHERE date(start_time) >= date('now', '-7 days')")->fetchColumn() ?: 0;
-$weeklyLitres = $weeklyVolumeML / 1000;
-
-// All Zones for Quick Prime
 $allZones = $pdo->query("SELECT z.*, r.name as room_name FROM Zones z JOIN Rooms r ON z.room_id = r.id ORDER BY r.name, z.name")->fetchAll(PDO::FETCH_ASSOC);
 
 ?>
@@ -75,16 +78,14 @@ $allZones = $pdo->query("SELECT z.*, r.name as room_name FROM Zones z JOIN Rooms
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Waterd Girls Do - Dashboard</title>
     <link rel="stylesheet" href="css/waterd.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        .hero { background: var(--primary-gradient); padding: 3rem 2rem; border-radius: 30px; margin-bottom: 2rem; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
-        .hero h1 { font-size: 2.5rem; margin: 0; }
-        .runtime-chip { background: rgba(46, 204, 113, 0.2); border: 1px solid var(--emerald); padding: 0.5rem 1rem; border-radius: 50px; display: inline-block; margin-top: 1rem; }
-        .prime-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.8rem; margin-top: 1rem; }
-        .prime-btn { background: rgba(255,215,0,0.1); border: 1px solid var(--gold); color: var(--gold); padding: 0.8rem; border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.3s; }
-        .prime-btn:hover { background: var(--gold); color: black; }
-        .split-bar { display: flex; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; overflow: hidden; margin: 1rem 0; }
-        .p1-bar { background: var(--emerald); height: 100%; transition: width 0.5s; }
-        .p2-bar { background: var(--gold); height: 100%; transition: width 0.5s; }
+        .vpd-tag { font-size: 2rem; font-weight: 800; color: var(--emerald); }
+        .sensor-card { background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 15px; border: 1px solid rgba(255,255,255,0.05); }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 2rem; }
+        .stat-box { background: var(--card-bg); padding: 1.5rem; border-radius: 20px; text-align: center; }
+        .stat-box small { color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+        .stat-box div { font-size: 1.8rem; font-weight: 800; margin-top: 0.5rem; }
     </style>
 </head>
 <body>
@@ -94,105 +95,112 @@ $allZones = $pdo->query("SELECT z.*, r.name as room_name FROM Zones z JOIN Rooms
             <ul>
                 <li><a href="dashboard.php" class="active">Dashboard</a></li>
                 <li><a href="irrigation.php">Rooms</a></li>
+                <li><a href="calendar.php">Calendar</a></li>
             </ul>
         </nav>
     </header>
 
     <main class="container">
-        <section class="hero">
-            <p>Crop Steering Console: <?= date('H:i') ?></p>
-            <h1>Feed Analytics</h1>
-            <div class="runtime-chip">
-                🥛 <strong><?= number_format($totalLitresToday, 2) ?> Litres</strong> distributed today
+        <div class="stat-grid">
+            <div class="stat-box">
+                <small>Today</small>
+                <div style="color:var(--emerald);"><?= number_format($stats1d/1000, 1) ?>L</div>
             </div>
-        </section>
+            <div class="stat-box">
+                <small>7 Days</small>
+                <div><?= number_format($stats7d/1000, 1) ?>L</div>
+            </div>
+            <div class="stat-box">
+                <small>30 Days</small>
+                <div style="color:var(--gold);"><?= number_format($stats30d/1000, 1) ?>L</div>
+            </div>
+        </div>
 
         <div class="dashboard-grid">
             <article class="card" style="grid-column: span 2;">
-                <h2>🕒 Next Steering Event</h2>
-                <?php if ($nextEvent): ?>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <div class="stat-value"><?= $nextEvent['start_time'] ?></div>
-                        <p><strong><?= htmlspecialchars($nextEvent['room_name']) ?></strong> - <?= htmlspecialchars($nextEvent['zone_name']) ?></p>
-                    </div>
-                    <div style="text-align:right;">
-                        <span class="badge badge-<?= strtolower($nextEvent['event_type']) ?>"><?= $nextEvent['event_type'] ?> Phase</span>
-                        <div style="font-size:1.5rem; font-weight:600; margin-top:0.5rem;"><?= floor($nextEvent['duration_seconds']/60) ?>m <?= $nextEvent['duration_seconds']%60 ?>s</div>
-                    </div>
-                </div>
-                <?php else: ?>
-                <div class="stat-value">Idle</div>
-                <p>No strategy active.</p>
-                <?php endif; ?>
+                <h2>📊 Water Usage Trend (Litres)</h2>
+                <canvas id="usageChart" style="max-height: 250px;"></canvas>
             </article>
 
             <article class="card">
-                <h2>📈 Phase Distribution</h2>
-                <div style="font-size: 0.9rem; color: var(--text-dim);">Today's Volume split:</div>
-                <div class="split-bar">
-                    <?php 
-                        $total = max(1, $p1TodayML + $p2TodayML);
-                        $p1Pct = ($p1TodayML / $total) * 100;
-                        $p2Pct = ($p2TodayML / $total) * 100;
-                    ?>
-                    <div class="p1-bar" style="width: <?= $p1Pct ?>%;"></div>
-                    <div class="p2-bar" style="width: <?= $p2Pct ?>%;"></div>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:0.8rem;">
-                    <span><span style="color:var(--emerald);">●</span> P1: <?= number_format($p1TodayML/1000, 2) ?>L</span>
-                    <span><span style="color:var(--gold);">●</span> P2: <?= number_format($p2TodayML/1000, 2) ?>L</span>
-                </div>
-                <div style="margin-top:1.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top:1rem;">
-                    <small style="color:var(--text-dim);">Weekly Total:</small>
-                    <div style="font-size:1.5rem; font-weight:800; color:var(--emerald);"><?= number_format($weeklyLitres, 1) ?> Litres</div>
-                </div>
+                <h2>🕒 Next Event</h2>
+                <?php if ($next): ?>
+                    <div class="stat-value"><?= $next['start_time'] ?></div>
+                    <p><strong><?= $next['room_name'] ?></strong> - <?= $next['zone_name'] ?></p>
+                    <span class="badge badge-<?= strtolower($next['event_type']) ?>"><?= $next['event_type'] ?> Shot</span>
+                <?php else: ?>
+                    <div class="stat-value">Idle</div>
+                <?php endif; ?>
             </article>
         </div>
 
-        <section style="margin-top:2rem;">
-            <h2>Quick Prime & Test</h2>
-            <div class="prime-grid">
-                <?php foreach ($allZones as $z): ?>
-                <form method="POST" style="margin:0;">
-                    <input type="hidden" name="action" value="prime">
-                    <input type="hidden" name="zone_id" value="<?= $z['id'] ?>">
-                    <button type="submit" class="prime-btn">
-                        <small style="font-size:0.6rem; opacity:0.8;"><?= htmlspecialchars($z['room_name']) ?></small><br>
-                        <strong><?= htmlspecialchars($z['name']) ?></strong>
-                    </button>
-                </form>
-                <?php endforeach; ?>
-            </div>
-        </section>
-
-        <section style="margin-top:3rem;">
-            <h2>Steering Log (Runoff & Maintenance)</h2>
-            <div class="dashboard-grid">
-                <?php
-                $stmt = $pdo->prepare("SELECT l.*, z.name as zone_name, r.name as room_name 
-                                      FROM IrrigationLogs l
-                                      JOIN Zones z ON l.zone_id = z.id 
-                                      JOIN Rooms r ON z.room_id = r.id 
-                                      WHERE date(l.start_time) = date('now')
-                                      ORDER BY l.start_time DESC LIMIT 6");
-                $stmt->execute();
-                $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                foreach ($logs as $log): ?>
-                <div class="zone-card" style="background:var(--card-bg); border-left: 4px solid <?= $log['event_type'] == 'P1' ? 'var(--emerald)' : 'var(--gold)' ?>;">
-                    <div style="display:flex; justify-content:space-between;">
-                        <strong><?= date('H:i', strtotime($log['start_time'])) ?></strong>
-                        <span style="color:var(--gold); font-weight:800;"><?= number_format($log['volume_ml'], 0) ?> mL</span>
+        <h2 style="margin-top:2rem;">Room Environment & Sensors</h2>
+        <div class="dashboard-grid">
+            <?php foreach($rooms as $room): 
+                $rs = $room_stats[$room['id']];
+            ?>
+            <article class="card">
+                <h3 style="margin:0;"><?= htmlspecialchars($room['name']) ?></h3>
+                <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:1rem;">
+                    <div>
+                        <div class="vpd-tag"><?= $rs['vpd'] ?: '--' ?> <small style="font-size:0.8rem; vertical-align:middle; color:var(--text-dim);">VPD</small></div>
+                        <div style="font-size:0.9rem; color:var(--text-dim);"><?= $rs['temp'] ?>°C / <?= $rs['hum'] ?>% RH</div>
                     </div>
-                    <div style="margin: 0.5rem 0; font-weight:600;"><?= htmlspecialchars($log['zone_name']) ?></div>
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <small style="color:var(--text-dim)"><?= htmlspecialchars($log['room_name']) ?></small>
-                        <span class="badge badge-<?= strtolower($log['event_type'] ?: 'p1') ?>" style="padding:0.1rem 0.3rem; font-size:0.6rem;"><?= $log['event_type'] ?></span>
+                    <div style="text-align:right;">
+                        <small style="color:var(--gold);">Lights</small><br>
+                        <strong><?= $rs['lights'] ?></strong>
                     </div>
                 </div>
+                <!-- Zone Sensors -->
+                <?php 
+                    $zs = $pdo->prepare("SELECT * FROM Zones WHERE room_id = ?"); $zs->execute([$room['id']]);
+                    foreach ($zs->fetchAll(PDO::FETCH_ASSOC) as $z): 
+                        $m = isset($entities_map[$z['moisture_sensor_id']]) ? $entities_map[$z['moisture_sensor_id']] : null;
+                        $ec = isset($entities_map[$z['ec_sensor_id']]) ? $entities_map[$z['ec_sensor_id']] : null;
+                        if ($m || $ec):
+                ?>
+                    <div class="zone-metrics" style="background:rgba(255,255,255,0.03); margin-top:0.8rem;">
+                        <div style="display:flex; justify-content:space-between;">
+                            <small><?= $z['name'] ?></small>
+                            <span style="font-size:0.7rem;"><?= $m ? "VWC: $m%" : "" ?> <?= $ec ? " EC: $ec" : "" ?></span>
+                        </div>
+                    </div>
+                <?php endif; endforeach; ?>
+            </article>
+            <?php endforeach; ?>
+        </div>
+
+        <section style="margin-top:2rem;">
+            <h2>Quick Controls</h2>
+            <div class="prime-grid">
+                <?php foreach($allZones as $z): ?>
+                <form method="POST"><input type="hidden" name="action" value="prime"><input type="hidden" name="zone_id" value="<?= $z['id'] ?>"><button class="prime-btn"><small><?= $z['room_name'] ?></small><br><strong><?= $z['name'] ?></strong></button></form>
                 <?php endforeach; ?>
             </div>
         </section>
     </main>
+
+    <script>
+        const ctx = document.getElementById('usageChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: <?= json_encode($graph_labels) ?>,
+                datasets: [{
+                    label: 'Litres',
+                    data: <?= json_encode($graph_data) ?>,
+                    backgroundColor: '#2ecc71',
+                    borderRadius: 8
+                }]
+            },
+            options: {
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    </script>
 </body>
 </html>

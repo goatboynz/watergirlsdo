@@ -13,21 +13,32 @@ function initializeDatabase($dbPath = '/data/waterdgirlsdo.db') {
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->exec('PRAGMA foreign_keys = ON;');
 
-        // Check if we need to add new columns to Zones
+        // Migrations
+        $res = $pdo->query("PRAGMA table_info(Rooms)")->fetchAll(PDO::FETCH_ASSOC);
+        $columns = array_column($res, 'name');
+        if (!in_array('lights_on', $columns)) {
+            $pdo->exec("ALTER TABLE Rooms ADD COLUMN lights_on TIME DEFAULT '08:00'");
+            $pdo->exec("ALTER TABLE Rooms ADD COLUMN lights_off TIME DEFAULT '20:00'");
+            $pdo->exec("ALTER TABLE Rooms ADD COLUMN temp_sensor_id TEXT");
+            $pdo->exec("ALTER TABLE Rooms ADD COLUMN humidity_sensor_id TEXT");
+        }
+
         $res = $pdo->query("PRAGMA table_info(Zones)")->fetchAll(PDO::FETCH_ASSOC);
         $columns = array_column($res, 'name');
-        
-        if (!in_array('plants_count', $columns)) {
-            $pdo->exec("ALTER TABLE Zones ADD COLUMN plants_count INTEGER DEFAULT 1");
-            $pdo->exec("ALTER TABLE Zones ADD COLUMN drippers_per_plant INTEGER DEFAULT 1");
-            $pdo->exec("ALTER TABLE Zones ADD COLUMN dripper_flow_rate FLOAT DEFAULT 2000"); // mL/h (default 2L/h)
+        if (!in_array('moisture_sensor_id', $columns)) {
+            $pdo->exec("ALTER TABLE Zones ADD COLUMN moisture_sensor_id TEXT");
+            $pdo->exec("ALTER TABLE Zones ADD COLUMN ec_sensor_id TEXT");
         }
 
         $createTablesSQL = [
             "CREATE TABLE IF NOT EXISTS Rooms (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
-                description TEXT
+                description TEXT,
+                lights_on TIME DEFAULT '08:00',
+                lights_off TIME DEFAULT '20:00',
+                temp_sensor_id TEXT,
+                humidity_sensor_id TEXT
             );",
 
             "CREATE TABLE IF NOT EXISTS Zones (
@@ -39,6 +50,8 @@ function initializeDatabase($dbPath = '/data/waterdgirlsdo.db') {
                 plants_count INTEGER DEFAULT 1,
                 drippers_per_plant INTEGER DEFAULT 1,
                 dripper_flow_rate FLOAT DEFAULT 2000,
+                moisture_sensor_id TEXT,
+                ec_sensor_id TEXT,
                 FOREIGN KEY (room_id) REFERENCES Rooms(id) ON DELETE CASCADE
             );",
 
