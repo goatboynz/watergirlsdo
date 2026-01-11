@@ -337,8 +337,8 @@ $sensors = array_filter($ha_entities, function($e) { return explode('.', $e['ent
 
             if(!tempId && !humId) return;
 
-            const resTemp = await fetch(`api_history.php?entity_id=${tempId}&range=${range}`).then(r => r.json());
-            const resHum = await fetch(`api_history.php?entity_id=${humId}&range=${range}`).then(r => r.json());
+            const resTemp = tempId ? await fetch(`api_history.php?entity_id=${tempId}&range=${range}`).then(r => r.json()) : {labels:[], data:[]};
+            const resHum = humId ? await fetch(`api_history.php?entity_id=${humId}&range=${range}`).then(r => r.json()) : {labels:[], data:[]};
 
             const ctx = document.getElementById('chart-' + rid).getContext('2d');
             
@@ -347,7 +347,7 @@ $sensors = array_filter($ha_entities, function($e) { return explode('.', $e['ent
             charts[rid] = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: resTemp.labels,
+                    labels: resTemp.labels.length ? resTemp.labels : resHum.labels,
                     datasets: [
                         { label: 'Temp', data: resTemp.data, borderColor: '#e74c3c', tension: 0.3, pointRadius: 0, borderWidth: 2 },
                         { label: 'Humidity', data: resHum.data, borderColor: '#3498db', tension: 0.3, pointRadius: 0, borderWidth: 2 }
@@ -372,11 +372,11 @@ $sensors = array_filter($ha_entities, function($e) { return explode('.', $e['ent
             document.getElementById('roomAction').value = d ? 'edit_room' : 'add_room';
             document.getElementById('roomId').value = d?d.id:'';
             document.getElementById('roomName').value = d?d.name:'';
-            document.getElementById('roomDesc').value = d?d.description || '';
-            document.getElementById('roomOn').value = d?d.lights_on:'';
-            document.getElementById('roomOff').value = d?d.lights_off:'';
-            document.getElementById('roomTemp').value = d?d.temp_sensor_id:'';
-            document.getElementById('roomHum').value = d?d.humidity_sensor_id:'';
+            document.getElementById('roomDesc').value = d ? (d.description || '') : '';
+            document.getElementById('roomOn').value = d ? (d.lights_on || '08:00') : '08:00';
+            document.getElementById('roomOff').value = d ? (d.lights_off || '20:00') : '20:00';
+            document.getElementById('roomTemp').value = d ? (d.temp_sensor_id || '') : '';
+            document.getElementById('roomHum').value = d ? (d.humidity_sensor_id || '') : '';
             document.getElementById('roomTitle').innerText = d ? 'Edit Room' : 'Add Room';
             showModal('roomModal');
         }
@@ -388,11 +388,11 @@ $sensors = array_filter($ha_entities, function($e) { return explode('.', $e['ent
             document.getElementById('zoneName').value = d?d.name:'';
             document.getElementById('zPump').value = d?d.pump_entity_id:'';
             document.getElementById('zSol').value = d?d.solenoid_entity_id:'';
-            document.getElementById('zPlants').value = d?d.plants_count || 1;
-            document.getElementById('zDripP').value = d?d.drippers_per_plant || 1;
-            document.getElementById('zFlow').value = d?d.dripper_flow_rate || 2000;
-            document.getElementById('zMoist').value = d?d.moisture_sensor_id:'';
-            document.getElementById('zEc').value = d?d.ec_sensor_id:'';
+            document.getElementById('zPlants').value = d ? (d.plants_count || 1) : 1;
+            document.getElementById('zDripP').value = d ? (d.drippers_per_plant || 1) : 1;
+            document.getElementById('zFlow').value = d ? (d.dripper_flow_rate || 2000) : 2000;
+            document.getElementById('zMoist').value = d ? (d.moisture_sensor_id || '') : '';
+            document.getElementById('zEc').value = d ? (d.ec_sensor_id || '') : '';
             showModal('zoneModal');
         }
 
