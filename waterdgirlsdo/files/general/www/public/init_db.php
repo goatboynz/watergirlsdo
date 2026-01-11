@@ -31,8 +31,8 @@ function initializeDatabase($dbPath = '/www/public/waterdgirlsdo.db') {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 room_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
-                switch_entity_id TEXT NOT NULL,
-                sensor_entity_id TEXT, -- Optional moisture/EC sensor
+                pump_entity_id TEXT NOT NULL,
+                solenoid_entity_id TEXT, -- Optional
                 FOREIGN KEY (room_id) REFERENCES Rooms(id) ON DELETE CASCADE
             );",
 
@@ -40,6 +40,7 @@ function initializeDatabase($dbPath = '/www/public/waterdgirlsdo.db') {
             "CREATE TABLE IF NOT EXISTS IrrigationEvents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 zone_id INTEGER NOT NULL,
+                event_type TEXT CHECK(event_type IN ('P1', 'P2')) DEFAULT 'P1',
                 start_time TIME NOT NULL, -- Format: HH:MM
                 duration_seconds INTEGER NOT NULL,
                 days_of_week TEXT DEFAULT '1,2,3,4,5,6,7', -- 1=Mon, 7=Sun

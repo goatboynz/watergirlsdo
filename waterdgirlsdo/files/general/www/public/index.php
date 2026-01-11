@@ -1,4 +1,4 @@
 <?php
-header("Location: irrigation.php");
+header("Location: dashboard.php");
 exit();
 ?>
