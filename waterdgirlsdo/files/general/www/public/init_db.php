@@ -41,6 +41,11 @@ function initializeDatabase($dbPath = '/data/waterdgirlsdo.db') {
         $cols = array_column($res, 'name');
         if (!in_array('volume_ml', $cols)) $pdo->exec("ALTER TABLE IrrigationLogs ADD COLUMN volume_ml FLOAT DEFAULT 0");
 
+        // 4. IrrigationEvents Migrations
+        $res = $pdo->query("PRAGMA table_info(IrrigationEvents)")->fetchAll(PDO::FETCH_ASSOC);
+        $cols = array_column($res, 'name');
+        if (!in_array('enabled', $cols)) $pdo->exec("ALTER TABLE IrrigationEvents ADD COLUMN enabled INTEGER DEFAULT 1");
+
         // --- CREATE TABLES (If none exist) ---
         $createTablesSQL = [
             "CREATE TABLE IF NOT EXISTS Rooms (

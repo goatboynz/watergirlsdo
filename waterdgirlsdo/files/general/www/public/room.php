@@ -165,11 +165,12 @@ $zones = $zStmt->fetchAll(PDO::FETCH_ASSOC);
                     $es->execute([$z['id']]);
                     foreach ($es->fetchAll(PDO::FETCH_ASSOC) as $ev):
                     ?>
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding:0.6rem; background:rgba(0,0,0,0.2); border-radius:10px; margin-bottom:0.4rem; font-size:0.8rem;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:0.6rem; background:rgba(0,0,0,0.2); border-radius:10px; margin-bottom:0.4rem; font-size:0.8rem; <?= !$ev['enabled'] ? 'opacity:0.4; filter:grayscale(1);' : '' ?>">
                         <div style="cursor:pointer;" onclick='showEventModal(<?= json_encode($ev) ?>)'>
                             <span class="badge badge-<?= strtolower($ev['event_type']) ?>"><?= $ev['event_type'] ?></span>
-                            <strong style="margin-left:5px;"><?= $ev['start_time'] ?></strong>
+                            <strong style="margin-left:5px; <?= !$ev['enabled'] ? 'text-decoration:line-through;' : '' ?>"><?= $ev['start_time'] ?></strong>
                             <small style="color:var(--text-dim); margin-left:5px;"><?= floor($ev['duration_seconds']/60) ?>m <?= $ev['duration_seconds']%60 ?>s</small>
+                            <?php if(!$ev['enabled']): ?><small style="color:var(--danger); margin-left:5px;">(Disabled)</small><?php endif; ?>
                         </div>
                         <form method="POST" action="irrigation.php" style="margin:0;"><input type="hidden" name="action" value="delete_event"><input type="hidden" name="id" value="<?= $ev['id'] ?>"><button type="submit" style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:1.1rem;">×</button></form>
                     </div>
@@ -286,10 +287,15 @@ $zones = $zStmt->fetchAll(PDO::FETCH_ASSOC);
                     </select>
                     <label>Start Time</label><input type="time" name="start_time" id="eventStart" required>
                 </div>
-                <label>Duration</label>
-                <div style="display:flex; gap:0.5rem;">
-                    <input type="number" name="mins" id="eventMins" placeholder="Mins">
-                    <input type="number" name="secs" id="eventSecs" placeholder="Secs">
+                <div class="grid-2" style="margin-top:1rem;">
+                    <label>Duration</label>
+                    <div style="display:flex; gap:0.5rem;">
+                        <input type="number" name="mins" id="eventMins" placeholder="Mins">
+                        <input type="number" name="secs" id="eventSecs" placeholder="Secs">
+                    </div>
+                    <label style="display:flex; align-items:center; gap:0.5rem; justify-content:flex-end; margin-top:25px;">
+                        <input type="checkbox" name="enabled" id="eventEnabled" checked> Enabled
+                    </label>
                 </div>
                 <div class="grid-2" style="margin-top:1.5rem;">
                     <button type="button" class="btn btn-secondary" onclick="hideModal('eventModal')">Cancel</button>
@@ -341,6 +347,7 @@ $zones = $zStmt->fetchAll(PDO::FETCH_ASSOC);
             document.getElementById('eventStart').value = d.start_time || '';
             document.getElementById('eventMins').value = d.duration_seconds ? Math.floor(d.duration_seconds/60) : 0;
             document.getElementById('eventSecs').value = d.duration_seconds ? d.duration_seconds%60 : 0;
+            document.getElementById('eventEnabled').checked = d.id ? (d.enabled == 1) : true;
             showModal('eventModal');
         }
 

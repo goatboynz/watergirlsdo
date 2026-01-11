@@ -33,15 +33,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header("Location: " . $_SERVER['HTTP_REFERER']);
                 exit;
             case 'add_event':
-                $stmt = $pdo->prepare("INSERT INTO IrrigationEvents (zone_id, event_type, start_time, duration_seconds) VALUES (?, ?, ?, ?)");
+                $stmt = $pdo->prepare("INSERT INTO IrrigationEvents (zone_id, event_type, start_time, duration_seconds, enabled) VALUES (?, ?, ?, ?, ?)");
                 $duration = (intval($_POST['mins'] ?? 0) * 60) + intval($_POST['secs'] ?? 0);
-                $stmt->execute([$_POST['zone_id'], $_POST['type'], $_POST['start_time'], $duration]);
+                $enabled = isset($_POST['enabled']) ? 1 : 0;
+                $stmt->execute([$_POST['zone_id'], $_POST['type'], $_POST['start_time'], $duration, $enabled]);
                 header("Location: " . $_SERVER['HTTP_REFERER']);
                 exit;
             case 'edit_event':
-                $stmt = $pdo->prepare("UPDATE IrrigationEvents SET event_type = ?, start_time = ?, duration_seconds = ? WHERE id = ?");
+                $stmt = $pdo->prepare("UPDATE IrrigationEvents SET event_type = ?, start_time = ?, duration_seconds = ?, enabled = ? WHERE id = ?");
                 $duration = (intval($_POST['mins'] ?? 0) * 60) + intval($_POST['secs'] ?? 0);
-                $stmt->execute([$_POST['type'], $_POST['start_time'], $duration, $_POST['id']]);
+                $enabled = isset($_POST['enabled']) ? 1 : 0;
+                $stmt->execute([$_POST['type'], $_POST['start_time'], $duration, $enabled, $_POST['id']]);
                 header("Location: " . $_SERVER['HTTP_REFERER']);
                 exit;
             case 'shot_engine':

@@ -2,7 +2,7 @@ name: "Waterd Girls Do"
 description: "Growers Regulatory Assistance & Compliance engine - Waterd Girls Do Edition"
 url: "https://github.com/goatboynz/watergirlsdo"
 codenotary: tech@waterdgirlsdo.com
-version: "1.9.1"
+version: "1.9.2"
 slug: "waterdgirlsdo"
 panel_icon: mdi:water
 init: false
