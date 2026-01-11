@@ -21,11 +21,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         switch ($action) {
             case 'add_room':
                 $stmt = $pdo->prepare("INSERT INTO Rooms (name, description, lights_on, lights_off, temp_sensor_id, humidity_sensor_id) VALUES (?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$_POST['name'], $_POST['description'], $_POST['lights_on'], $_POST['lights_off'], $_POST['temp_id'] ?: null, $_POST['hum_id'] ?: null]);
+                $stmt->execute([$_POST['name'], $_POST['description'] ?? '', $_POST['lights_on'], $_POST['lights_off'], $_POST['temp_id'] ?: null, $_POST['hum_id'] ?: null]);
                 break;
             case 'edit_room':
                 $stmt = $pdo->prepare("UPDATE Rooms SET name = ?, description = ?, lights_on = ?, lights_off = ?, temp_sensor_id = ?, humidity_sensor_id = ? WHERE id = ?");
-                $stmt->execute([$_POST['name'], $_POST['description'], $_POST['lights_on'], $_POST['lights_off'], $_POST['temp_id'] ?: null, $_POST['hum_id'] ?: null, $_POST['id']]);
+                $stmt->execute([$_POST['name'], $_POST['description'] ?? '', $_POST['lights_on'], $_POST['lights_off'], $_POST['temp_id'] ?: null, $_POST['hum_id'] ?: null, $_POST['id']]);
                 break;
             case 'delete_room': $stmt = $pdo->prepare("DELETE FROM Rooms WHERE id = ?"); $stmt->execute([$_POST['id']]); break;
             case 'add_zone':
@@ -87,7 +87,7 @@ $ha_entities = ha_get_entities();
 $entities_map = [];
 foreach ($ha_entities as $e) { 
     $val = $e['state'] ?? '--';
-    if (is_numeric($val)) $val = round((float)$val, 1);
+    if (is_numeric($val)) $val = round(floatval($val), 1);
     $entities_map[$e['entity_id']] = $val; 
 }
 
@@ -372,7 +372,7 @@ $sensors = array_filter($ha_entities, function($e) { return explode('.', $e['ent
             document.getElementById('roomAction').value = d ? 'edit_room' : 'add_room';
             document.getElementById('roomId').value = d?d.id:'';
             document.getElementById('roomName').value = d?d.name:'';
-            document.getElementById('roomDesc').value = d?d.description:'';
+            document.getElementById('roomDesc').value = d?d.description || '';
             document.getElementById('roomOn').value = d?d.lights_on:'';
             document.getElementById('roomOff').value = d?d.lights_off:'';
             document.getElementById('roomTemp').value = d?d.temp_sensor_id:'';

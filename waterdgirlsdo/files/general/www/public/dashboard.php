@@ -36,9 +36,9 @@ $last3 = $pdo->query("SELECT l.*, z.name as zone_name, r.name as room_name
 
 // Next 3 events (for today)
 $now_time = date('H:i');
-$current_day = str(date('w')); // 0=Sun, 6=Sat in PHP w, but our DB uses 1=Mon, 7=Sun.
+// 0=Sun, 6=Sat in PHP w, but our DB uses 1=Mon, 7=Sun.
 $day_map = [0=>7, 1=>1, 2=>2, 3=>3, 4=>4, 5=>5, 6=>6];
-$db_day = $day_map[date('w')];
+$db_day = $day_map[intval(date('w'))];
 
 $next3 = $pdo->prepare("SELECT e.*, z.name as zone_name, r.name as room_name 
                        FROM IrrigationEvents e 
@@ -88,7 +88,7 @@ $rooms = $pdo->query("SELECT * FROM Rooms ORDER BY name ASC")->fetchAll(PDO::FET
         <section class="dash-hero">
             <div>
                 <small style="text-transform:uppercase; letter-spacing:2px; opacity:0.8;">Facility Overview</small>
-                <h1>Welcome back, Chief.</h1>
+                <h1>Welcome back.</h1>
             </div>
             <div style="text-align:right;">
                 <div style="font-size:1.5rem; font-weight:800;"><?= number_format($stats1d/1000, 1) ?>L</div>
@@ -138,15 +138,15 @@ $rooms = $pdo->query("SELECT * FROM Rooms ORDER BY name ASC")->fetchAll(PDO::FET
 
                 <h2 style="margin-top:2rem;">Room Command</h2>
                 <div class="dashboard-grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">
-                    <?php foreach($rooms as $r): 
-                        $temp = $entities_map[$r['temp_sensor_id']] ?? '--';
-                        $hum = $entities_map[$r['humidity_sensor_id']] ?? '--';
+                    <?php if ($rooms): foreach($rooms as $r): 
+                        $temp = $entities_map[$r['temp_sensor_id'] ?? ''] ?? '--';
+                        $hum = $entities_map[$r['humidity_sensor_id'] ?? ''] ?? '--';
                         $vpd = calculateVPD($temp, $hum) ?? '--';
                         
                         // Get first zone moisture/ec for room overview
-                        $z = $pdo->prepare("SELECT moisture_sensor_id, ec_sensor_id FROM Zones WHERE room_id = ? LIMIT 1");
-                        $z->execute([$r['id']]);
-                        $zi = $z->fetch(PDO::FETCH_ASSOC);
+                        $zstmt = $pdo->prepare("SELECT moisture_sensor_id, ec_sensor_id FROM Zones WHERE room_id = ? LIMIT 1");
+                        $zstmt->execute([$r['id']]);
+                        $zi = $zstmt->fetch(PDO::FETCH_ASSOC);
                         $vwc = $entities_map[$zi['moisture_sensor_id'] ?? ''] ?? '--';
                         $ec = $entities_map[$zi['ec_sensor_id'] ?? ''] ?? '--';
                     ?>
@@ -163,7 +163,7 @@ $rooms = $pdo->query("SELECT * FROM Rooms ORDER BY name ASC")->fetchAll(PDO::FET
                         </div>
                         <a href="irrigation.php#room-group-<?= $r['id'] ?>" class="btn btn-secondary" style="width:100%; margin-top:1rem; padding:0.5rem;">Control Room</a>
                     </article>
-                    <?php endforeach; ?>
+                    <?php endforeach; endif; ?>
                 </div>
             </div>
 
