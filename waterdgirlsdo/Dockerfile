@@ -10,6 +10,7 @@ RUN apk -U upgrade && apk add --no-cache \
     php83-pdo \
     php83-pdo_sqlite \
     php83-session \
+    php83-curl \
     sqlite \
     python3 \
     && ln -s /usr/sbin/php-fpm83 /usr/sbin/php-fpm \
@@ -22,7 +23,10 @@ RUN apk -U upgrade && apk add --no-cache \
     } > /etc/php83/conf.d/20-pdo.ini \
     && { \
     echo "extension=session.so"; \
-    } > /etc/php83/conf.d/21-session.ini
+    } > /etc/php83/conf.d/21-session.ini \
+    && { \
+    echo "extension=curl.so"; \
+    } > /etc/php83/conf.d/22-curl.ini
 
 #RUN mkdir -p /grace_config && \
 #    chown -R php:nginx /grace_config && \
