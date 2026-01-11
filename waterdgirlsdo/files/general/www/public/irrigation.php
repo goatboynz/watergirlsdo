@@ -196,12 +196,17 @@ $sensors = array_filter($ha_entities, function($e) { return explode('.', $e['ent
                             <?php
                             $es = $pdo->prepare("SELECT * FROM IrrigationEvents WHERE zone_id = ? ORDER BY start_time ASC"); $es->execute([$zone['id']]);
                             foreach ($es->fetchAll(PDO::FETCH_ASSOC) as $event): ?>
-                            <div class="event-item" style="cursor:pointer;" onclick='showEventModal(<?= json_encode($event) ?>)'>
-                                <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <div class="event-item" style="display:flex; justify-content:space-between; align-items:center;">
+                                <div style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; flex: 1;" onclick='showEventModal(<?= json_encode($event) ?>)'>
                                     <span class="badge badge-<?= strtolower($event['event_type']) ?>"><?= $event['event_type'] ?></span>
                                     <strong><?= $event['start_time'] ?></strong>
+                                    <span style="font-size:0.8rem; color:var(--text-dim);"><?= floor($event['duration_seconds']/60) ?>m <?= $event['duration_seconds']%60 ?>s</span>
                                 </div>
-                                <span style="font-size:0.8rem; color:var(--text-dim);"><?= floor($event['duration_seconds']/60) ?>m <?= $event['duration_seconds']%60 ?>s</span>
+                                <form method="POST" onsubmit="return confirm('Delete event?')" style="margin:0;">
+                                    <input type="hidden" name="action" value="delete_event">
+                                    <input type="hidden" name="id" value="<?= $event['id'] ?>">
+                                    <button type="submit" style="background:none; border:none; color:var(--danger); cursor:pointer; font-weight:800; padding:0 0.5rem;">×</button>
+                                </form>
                             </div>
                             <?php endforeach; ?>
                         </div>
