@@ -42,19 +42,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
             case 'shot_engine':
                 $zone_id = $_POST['zone_id'];
-                $start_time = $_POST['start_time'];
-                $shot_count = intval($_POST['shot_count']);
-                $interval = intval($_POST['interval_mins']);
-                $duration = (intval($_POST['mins']) * 60) + intval($_POST['secs']);
-                $type = $_POST['type'];
                 
-                $startTimeObj = new DateTime($start_time);
+                // Clear existing if requested
+                if (isset($_POST['clear_existing'])) {
+                    $pdo->prepare("DELETE FROM IrrigationEvents WHERE zone_id = ?")->execute([$zone_id]);
+                }
+
                 $stmt = $pdo->prepare("INSERT INTO IrrigationEvents (zone_id, event_type, start_time, duration_seconds) VALUES (?, ?, ?, ?)");
+
+                // P1 Phase
+                $p1_start = $_POST['p1_start'];
+                $p1_count = intval($_POST['p1_count']);
+                $p1_interval = intval($_POST['p1_interval']);
+                $p1_duration = (intval($_POST['p1_mins']) * 60) + intval($_POST['p1_secs']);
                 
-                for ($i = 0; $i < $shot_count; $i++) {
-                    $time_str = $startTimeObj->format('H:i');
-                    $stmt->execute([$zone_id, $type, $time_str, $duration]);
-                    $startTimeObj->modify("+{$interval} minutes");
+                $timeObj = new DateTime($p1_start);
+                for ($i = 0; $i < $p1_count; $i++) {
+                    $stmt->execute([$zone_id, 'P1', $timeObj->format('H:i'), $p1_duration]);
+                    $timeObj->modify("+{$p1_interval} minutes");
+                }
+                
+                // P2 Phase
+                if (isset($_POST['p2_enabled'])) {
+                    $p2_count = intval($_POST['p2_count']);
+                    $p2_interval = intval($_POST['p2_interval']);
+                    $p2_duration = (intval($_POST['p2_mins']) * 60) + intval($_POST['p2_secs']);
+                    
+                    for ($i = 0; $i < $p2_count; $i++) {
+                        $stmt->execute([$zone_id, 'P2', $timeObj->format('H:i'), $p2_duration]);
+                        $timeObj->modify("+{$p2_interval} minutes");
+                    }
                 }
                 break;
             case 'edit_event':
@@ -72,14 +89,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
             case 'prime':
                 $zone_id = $_POST['zone_id'];
-                // Fetch info
                 $stmt = $pdo->prepare("SELECT pump_entity_id, solenoid_entity_id FROM Zones WHERE id = ?");
                 $stmt->execute([$zone_id]);
                 $z = $stmt->fetch(PDO::FETCH_ASSOC);
                 if ($z) {
                     if ($z['solenoid_entity_id']) ha_set_state($z['solenoid_entity_id'], 'on');
                     ha_set_state($z['pump_entity_id'], 'on');
-                    usleep(5000000); // Prime for 5 seconds
+                    usleep(5000000); 
                     ha_set_state($z['pump_entity_id'], 'off');
                     if ($z['solenoid_entity_id']) ha_set_state($z['solenoid_entity_id'], 'off');
                 }
@@ -110,6 +126,10 @@ $switches = array_filter($ha_entities, function($e) {
         .icon-btn:hover { color: var(--emerald); }
         .zone-metrics { background: rgba(0,0,0,0.4); padding: 0.8rem; border-radius: 12px; margin-top: 1rem; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.05); }
         .metric-row { display: flex; justify-content: space-between; margin-bottom: 0.3rem; }
+        .strategy-block { background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 15px; margin-bottom: 1rem; border: 1px solid rgba(255,255,255,0.1); }
+        .strategy-block h3 { margin-top: 0; font-size: 1rem; color: var(--emerald); }
+        .strategy-block.p2 { border-color: var(--gold); }
+        .strategy-block.p2 h3 { color: var(--gold); }
     </style>
 </head>
 <body>
@@ -291,46 +311,69 @@ $switches = array_filter($ha_entities, function($e) {
         </div>
     </div>
 
-    <!-- Event Modals -->
+    <!-- Strategy Engine Modal -->
     <div id="shotEngineModal" class="modal-backdrop">
-        <div class="modal">
-            <h2>Shot Calculation Engine</h2>
+        <div class="modal" style="max-width: 600px;">
+            <h2>Daily Irrigation Strategy Builder</h2>
             <form method="POST">
                 <input type="hidden" name="action" value="shot_engine">
                 <input type="hidden" name="zone_id" id="shotZoneId">
                 
-                <label><small>Event Type</small></label>
-                <select name="type">
-                    <option value="P1">P1 (Generative)</option>
-                    <option value="P2">P2 (Vegetative)</option>
-                </select>
-
-                <div class="grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem;">
-                    <div><label><small>Start Time</small><input type="time" name="start_time" required></label></div>
-                    <div><label><small>Shot Count</small><input type="number" name="shot_count" value="10" min="1" required></label></div>
-                </div>
-                
-                <div class="grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem;">
-                    <div><label><small>Interval (Mins)</small><input type="number" name="interval_mins" value="15" min="1" required></label></div>
-                    <div>
-                        <label><small>Duration per Shot</small>
-                        <div style="display:flex; gap:0.3rem;">
-                            <input type="number" name="mins" value="0" min="0"><small>m</small>
-                            <input type="number" name="secs" value="30" min="0" max="59"><small>s</small>
-                        </div>
+                <div class="strategy-block">
+                    <h3>⚡ Phase 1: Ramp-Up (Field Capacity)</h3>
+                    <div class="grid-2">
+                        <label><small>P1 Start Time</small><input type="time" name="p1_start" value="08:00" required></label>
+                        <label><small>Shot Count</small><input type="number" name="p1_count" value="5" min="1"></label>
+                    </div>
+                    <div class="grid-2" style="margin-top:0.5rem;">
+                        <label><small>Interval (Mins)</small><input type="number" name="p1_interval" value="30" min="1"></label>
+                        <label><small>P1 Duration</small>
+                            <div style="display:flex; gap:0.3rem;">
+                                <input type="number" name="p1_mins" value="0"><small>m</small>
+                                <input type="number" name="p1_secs" value="45"><small>s</small>
+                            </div>
                         </label>
                     </div>
                 </div>
 
+                <div class="strategy-block p2">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3>🌿 Phase 2: Maintenance (Transpiration Control)</h3>
+                        <label style="display:flex; align-items:center; gap:0.5rem; margin:0;">
+                            <input type="checkbox" name="p2_enabled" id="p2_toggle" checked> <small>Enabled</small>
+                        </label>
+                    </div>
+                    <div id="p2_settings">
+                        <div class="grid-2" style="margin-top:0.5rem;">
+                            <label><small>Shot Count</small><input type="number" name="p2_count" value="10" min="1"></label>
+                            <label><small>Interval (Mins)</small><input type="number" name="p2_interval" value="60" min="1"></label>
+                        </div>
+                        <div style="margin-top:0.5rem;">
+                             <label><small>P2 Duration</small>
+                                <div style="display:flex; gap:0.3rem;">
+                                    <input type="number" name="p2_mins" value="0"><small>m</small>
+                                    <input type="number" name="p2_secs" value="30"><small>s</small>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:1.5rem;">
+                    <label style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" name="clear_existing" checked> <small>Clear existing events for this zone</small>
+                    </label>
+                </div>
+
                 <div class="grid-2">
                     <button type="button" class="btn btn-secondary" onclick="hideModal('shotEngineModal')">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Generate Shots</button>
+                    <button type="submit" class="btn btn-primary" style="background:var(--primary-gradient);">Build Strategy</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Other Modals keep as per standard edit/add logic -->
+    <!-- Manual Event Modal -->
     <div id="eventModal" class="modal-backdrop">
         <div class="modal">
             <h2 id="eventModalTitle">Manual Entry</h2>
@@ -354,6 +397,12 @@ $switches = array_filter($ha_entities, function($e) {
     <script>
         function showModal(id) { document.getElementById(id).style.display = 'flex'; }
         function hideModal(id) { document.getElementById(id).style.display = 'none'; }
+        
+        document.getElementById('p2_toggle')?.addEventListener('change', function(e) {
+            document.getElementById('p2_settings').style.opacity = e.target.checked ? '1' : '0.3';
+            document.getElementById('p2_settings').style.pointerEvents = e.target.checked ? 'all' : 'none';
+        });
+
         function showRoomModal(data = null) {
             if(data) {
                 document.getElementById('roomAction').value = 'edit_room';
@@ -369,6 +418,7 @@ $switches = array_filter($ha_entities, function($e) {
             }
             showModal('roomModal');
         }
+
         function showZoneModal(roomId, name, data = null) {
             document.getElementById('modalRoomId').value = roomId;
             if(data) {
@@ -388,6 +438,7 @@ $switches = array_filter($ha_entities, function($e) {
             }
             showModal('zoneModal');
         }
+
         function showEventModal(zoneId, name, data = null) {
             document.getElementById('modalZoneId').value = zoneId;
             if(data) {
@@ -401,10 +452,11 @@ $switches = array_filter($ha_entities, function($e) {
             } else {
                 document.getElementById('eventAction').value = 'add_event';
                 document.getElementById('eventTimeInput').value = '';
-                showModal('eventModal');
+                document.getElementById('eventModalTitle').innerText = 'Add Entry to ' + name;
             }
             showModal('eventModal');
         }
+
         function showShotEngineModal(zoneId, name) {
             document.getElementById('shotZoneId').value = zoneId;
             showModal('shotEngineModal');
