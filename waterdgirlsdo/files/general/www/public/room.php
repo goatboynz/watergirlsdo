@@ -153,7 +153,10 @@ $zones = $zStmt->fetchAll(PDO::FETCH_ASSOC);
                 
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
                     <strong style="font-size:0.8rem;">Scheduled Shots</strong>
-                    <button class="btn btn-secondary" style="font-size:0.7rem; padding:0.2rem 0.6rem;" onclick="showShotEngineModal(<?= $z['id'] ?>)">Strategy Engine</button>
+                    <div style="display:flex; gap:0.4rem;">
+                        <button class="btn btn-secondary" style="font-size:0.7rem; padding:0.2rem 0.6rem;" onclick="showEventModal({zone_id: <?= $z['id'] ?>})">+ Add Shot</button>
+                        <button class="btn btn-primary" style="font-size:0.7rem; padding:0.2rem 0.6rem;" onclick="showShotEngineModal(<?= $z['id'] ?>)">Engine</button>
+                    </div>
                 </div>
                 
                 <div class="event-list" style="max-height:200px; overflow-y:auto; padding-right:5px;">
@@ -163,7 +166,7 @@ $zones = $zStmt->fetchAll(PDO::FETCH_ASSOC);
                     foreach ($es->fetchAll(PDO::FETCH_ASSOC) as $ev):
                     ?>
                     <div style="display:flex; justify-content:space-between; align-items:center; padding:0.6rem; background:rgba(0,0,0,0.2); border-radius:10px; margin-bottom:0.4rem; font-size:0.8rem;">
-                        <div>
+                        <div style="cursor:pointer;" onclick='showEventModal(<?= json_encode($ev) ?>)'>
                             <span class="badge badge-<?= strtolower($ev['event_type']) ?>"><?= $ev['event_type'] ?></span>
                             <strong style="margin-left:5px;"><?= $ev['start_time'] ?></strong>
                             <small style="color:var(--text-dim); margin-left:5px;"><?= floor($ev['duration_seconds']/60) ?>m <?= $ev['duration_seconds']%60 ?>s</small>
@@ -270,6 +273,32 @@ $zones = $zStmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
+    <div id="eventModal" class="modal-backdrop">
+        <div class="modal">
+            <h2 id="eventTitle">Strategic Shot</h2>
+            <form method="POST" action="irrigation.php">
+                <input type="hidden" name="action" id="eventAction"><input type="hidden" name="id" id="eventId"><input type="hidden" name="zone_id" id="eventZoneId">
+                <div class="grid-2">
+                    <label>Type</label>
+                    <select name="type" id="eventType">
+                        <option value="P1">P1 (Ramp Up)</option>
+                        <option value="P2">P2 (Maintenance)</option>
+                    </select>
+                    <label>Start Time</label><input type="time" name="start_time" id="eventStart" required>
+                </div>
+                <label>Duration</label>
+                <div style="display:flex; gap:0.5rem;">
+                    <input type="number" name="mins" id="eventMins" placeholder="Mins">
+                    <input type="number" name="secs" id="eventSecs" placeholder="Secs">
+                </div>
+                <div class="grid-2" style="margin-top:1.5rem;">
+                    <button type="button" class="btn btn-secondary" onclick="hideModal('eventModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Shot</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         function showModal(id) { document.getElementById(id).style.display='flex'; }
         function hideModal(id) { document.getElementById(id).style.display='none'; }
@@ -302,6 +331,17 @@ $zones = $zStmt->fetchAll(PDO::FETCH_ASSOC);
         function showShotEngineModal(zid) {
             document.getElementById('seZoneId').value = zid;
             showModal('shotEngineModal');
+        }
+
+        function showEventModal(d) {
+            document.getElementById('eventAction').value = d.id ? 'edit_event' : 'add_event';
+            document.getElementById('eventId').value = d.id || '';
+            document.getElementById('eventZoneId').value = d.zone_id;
+            document.getElementById('eventType').value = d.event_type || 'P1';
+            document.getElementById('eventStart').value = d.start_time || '';
+            document.getElementById('eventMins').value = d.duration_seconds ? Math.floor(d.duration_seconds/60) : 0;
+            document.getElementById('eventSecs').value = d.duration_seconds ? d.duration_seconds%60 : 0;
+            showModal('eventModal');
         }
 
         let envChart = null;

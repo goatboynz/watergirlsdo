@@ -32,6 +32,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([$_POST['id']]); 
                 header("Location: " . $_SERVER['HTTP_REFERER']);
                 exit;
+            case 'add_event':
+                $stmt = $pdo->prepare("INSERT INTO IrrigationEvents (zone_id, event_type, start_time, duration_seconds) VALUES (?, ?, ?, ?)");
+                $duration = (intval($_POST['mins'] ?? 0) * 60) + intval($_POST['secs'] ?? 0);
+                $stmt->execute([$_POST['zone_id'], $_POST['type'], $_POST['start_time'], $duration]);
+                header("Location: " . $_SERVER['HTTP_REFERER']);
+                exit;
+            case 'edit_event':
+                $stmt = $pdo->prepare("UPDATE IrrigationEvents SET event_type = ?, start_time = ?, duration_seconds = ? WHERE id = ?");
+                $duration = (intval($_POST['mins'] ?? 0) * 60) + intval($_POST['secs'] ?? 0);
+                $stmt->execute([$_POST['type'], $_POST['start_time'], $duration, $_POST['id']]);
+                header("Location: " . $_SERVER['HTTP_REFERER']);
+                exit;
             case 'shot_engine':
                 $zone_id = $_POST['zone_id'];
                 if (isset($_POST['clear_existing'])) $pdo->prepare("DELETE FROM IrrigationEvents WHERE zone_id = ?")->execute([$zone_id]);
