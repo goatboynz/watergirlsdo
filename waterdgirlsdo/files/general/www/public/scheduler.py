@@ -5,6 +5,7 @@ import json
 import os
 import urllib.request
 import threading
+import sys
 
 DB_PATH = '/data/waterdgirlsdo.db'
 HA_URL = 'http://supervisor/core/api'
@@ -35,21 +36,21 @@ def call_ha_service(entity_id, state):
     
     try:
         with urllib.request.urlopen(req) as f:
-            print(f"[{datetime.datetime.now()}] HA API: {entity_id} -> {state}")
+            pass # print(f"[{datetime.datetime.now()}] HA API: {entity_id} -> {state}")
     except Exception as e:
         print(f"Error calling HA API for {entity_id}: {e}")
 
-def run_irrigation(room_id, zone_id, pump_id, solenoid_id, duration):
-    # Get the lock for this specific room to prevent simultaneous zone watering
+def run_irrigation(room_id, zone_id, pump_id, solenoid_id, duration, event_type="P1"):
     lock = get_room_lock(room_id)
     
     with lock:
-        print(f"[{datetime.datetime.now()}] Starting Zone {zone_id} in Room {room_id}")
+        now_start = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{now_start}] Starting Zone {zone_id} in Room {room_id} for {duration}s")
         
         # 1. Open Solenoid first if exists
         if solenoid_id:
             call_ha_service(solenoid_id, 'on')
-            time.sleep(2) # Prime time
+            time.sleep(2) 
             
         # 2. Turn on Pump
         call_ha_service(pump_id, 'on')
@@ -62,14 +63,24 @@ def run_irrigation(room_id, zone_id, pump_id, solenoid_id, duration):
         
         # 5. Close Solenoid last if exists
         if solenoid_id:
-            time.sleep(2) # Pressure release
+            time.sleep(2) 
             call_ha_service(solenoid_id, 'off')
             
-        # 6. Log to DB
+        # 6. Calculate Volume and Log
         try:
             conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO IrrigationLogs (zone_id, duration_seconds) VALUES (?, ?)", (zone_id, duration))
+            cur = conn.cursor()
+            cur.execute("SELECT plants_count, drippers_per_plant, dripper_flow_rate FROM Zones WHERE id = ?", (zone_id,))
+            zinfo = cur.fetchone()
+            volume_ml = 0
+            if zinfo:
+                plants, drippers, flow_rate = zinfo
+                # flow_rate is mL/hour. duration is seconds.
+                total_flow_rate = plants * drippers * flow_rate
+                volume_ml = (total_flow_rate / 3600) * duration
+                
+            cur.execute("INSERT INTO IrrigationLogs (zone_id, event_type, start_time, duration_seconds, volume_ml) VALUES (?, ?, ?, ?, ?)", 
+                       (zone_id, event_type, now_start, duration, volume_ml))
             conn.commit()
             conn.close()
         except Exception as e:
@@ -78,25 +89,31 @@ def run_irrigation(room_id, zone_id, pump_id, solenoid_id, duration):
         print(f"[{datetime.datetime.now()}] Finished Zone {zone_id}")
 
 def main():
-    print("Waterd Girls Do - High Precision Scheduler Started")
+    print(f"[{datetime.datetime.now()}] Waterd Girls Do - Scheduler Initializing")
+    
+    # NTP / Time Check
+    # In Home Assistant addons, time is usually managed by the host. 
+    # We just log it for verification.
+    print(f"SYSTEM TIME: {datetime.datetime.now()}")
+    print(f"TIMEZONE: {time.tzname}")
+    
     last_minute = -1
     
     while True:
         now = datetime.datetime.now()
-        current_minute = now.minute
+        current_minute = (now.hour * 60) + now.minute
         
         if current_minute != last_minute:
             last_minute = current_minute
             current_time_str = now.strftime("%H:%M")
-            current_day = str(now.isoweekday()) # 1=Mon, 7=Sun
+            current_day = str(now.isoweekday()) 
             
             try:
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
                 
-                # Fetch events with room grouping info
                 query = """
-                    SELECT z.room_id, z.id, z.pump_entity_id, z.solenoid_entity_id, e.duration_seconds, e.days_of_week
+                    SELECT z.room_id, z.id, z.pump_entity_id, z.solenoid_entity_id, e.duration_seconds, e.days_of_week, e.event_type
                     FROM IrrigationEvents e
                     JOIN Zones z ON e.zone_id = z.id
                     WHERE e.enabled = 1 AND e.start_time = ?
@@ -105,11 +122,9 @@ def main():
                 events = cursor.fetchall()
                 conn.close()
                 
-                for room_id, zone_id, pump_id, solenoid_id, duration, days_of_week in events:
+                for room_id, zone_id, pump_id, solenoid_id, duration, days_of_week, event_type in events:
                     if current_day in days_of_week.split(','):
-                        # Use a thread for each event. The Room Lock inside the thread 
-                        # will ensure they run sequentially if they belong to the same room.
-                        thread = threading.Thread(target=run_irrigation, args=(room_id, zone_id, pump_id, solenoid_id, duration))
+                        thread = threading.Thread(target=run_irrigation, args=(room_id, zone_id, pump_id, solenoid_id, duration, event_type))
                         thread.start()
                         
             except Exception as e:

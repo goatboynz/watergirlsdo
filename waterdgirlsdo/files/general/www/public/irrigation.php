@@ -23,12 +23,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([$_POST['id']]);
                 break;
             case 'add_zone':
-                $stmt = $pdo->prepare("INSERT INTO Zones (room_id, name, pump_entity_id, solenoid_entity_id) VALUES (?, ?, ?, ?)");
-                $stmt->execute([$_POST['room_id'], $_POST['name'], $_POST['pump_id'], $_POST['solenoid_id'] ?: null]);
+                $stmt = $pdo->prepare("INSERT INTO Zones (room_id, name, pump_entity_id, solenoid_entity_id, plants_count, drippers_per_plant, dripper_flow_rate) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([$_POST['room_id'], $_POST['name'], $_POST['pump_id'], $_POST['solenoid_id'] ?: null, $_POST['plants_count'], $_POST['drippers_per_plant'], $_POST['flow_rate']]);
                 break;
             case 'edit_zone':
-                $stmt = $pdo->prepare("UPDATE Zones SET name = ?, pump_entity_id = ?, solenoid_entity_id = ? WHERE id = ?");
-                $stmt->execute([$_POST['name'], $_POST['pump_id'], $_POST['solenoid_id'] ?: null, $_POST['id']]);
+                $stmt = $pdo->prepare("UPDATE Zones SET name = ?, pump_entity_id = ?, solenoid_entity_id = ?, plants_count = ?, drippers_per_plant = ?, dripper_flow_rate = ? WHERE id = ?");
+                $stmt->execute([$_POST['name'], $_POST['pump_id'], $_POST['solenoid_id'] ?: null, $_POST['plants_count'], $_POST['drippers_per_plant'], $_POST['flow_rate'], $_POST['id']]);
                 break;
             case 'delete_zone':
                 $stmt = $pdo->prepare("DELETE FROM Zones WHERE id = ?");
@@ -39,6 +39,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $duration = (intval($_POST['mins']) * 60) + intval($_POST['secs']);
                 $days = isset($_POST['days']) ? implode(',', $_POST['days']) : '1,2,3,4,5,6,7';
                 $stmt->execute([$_POST['zone_id'], $_POST['type'], $_POST['start_time'], $duration, $days]);
+                break;
+            case 'shot_engine':
+                $zone_id = $_POST['zone_id'];
+                $start_time = $_POST['start_time'];
+                $shot_count = intval($_POST['shot_count']);
+                $interval = intval($_POST['interval_mins']);
+                $duration = (intval($_POST['mins']) * 60) + intval($_POST['secs']);
+                $type = $_POST['type'];
+                
+                $startTimeObj = new DateTime($start_time);
+                $stmt = $pdo->prepare("INSERT INTO IrrigationEvents (zone_id, event_type, start_time, duration_seconds) VALUES (?, ?, ?, ?)");
+                
+                for ($i = 0; $i < $shot_count; $i++) {
+                    $time_str = $startTimeObj->format('H:i');
+                    $stmt->execute([$zone_id, $type, $time_str, $duration]);
+                    $startTimeObj->modify("+{$interval} minutes");
+                }
                 break;
             case 'edit_event':
                 $duration = (intval($_POST['mins']) * 60) + intval($_POST['secs']);
@@ -52,6 +69,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'toggle_event':
                 $stmt = $pdo->prepare("UPDATE IrrigationEvents SET enabled = 1 - enabled WHERE id = ?");
                 $stmt->execute([$_POST['id']]);
+                break;
+            case 'prime':
+                $zone_id = $_POST['zone_id'];
+                // Fetch info
+                $stmt = $pdo->prepare("SELECT pump_entity_id, solenoid_entity_id FROM Zones WHERE id = ?");
+                $stmt->execute([$zone_id]);
+                $z = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($z) {
+                    if ($z['solenoid_entity_id']) ha_set_state($z['solenoid_entity_id'], 'on');
+                    ha_set_state($z['pump_entity_id'], 'on');
+                    usleep(5000000); // Prime for 5 seconds
+                    ha_set_state($z['pump_entity_id'], 'off');
+                    if ($z['solenoid_entity_id']) ha_set_state($z['solenoid_entity_id'], 'off');
+                }
                 break;
         }
     } catch (Exception $e) {
@@ -75,16 +106,10 @@ $switches = array_filter($ha_entities, function($e) {
     <title>Waterd Girls Do - Rooms & Control</title>
     <link rel="stylesheet" href="css/waterd.css">
     <style>
-        .icon-btn {
-            background: transparent;
-            border: none;
-            color: var(--text-dim);
-            cursor: pointer;
-            padding: 0.2rem;
-            transition: color 0.3s;
-        }
+        .icon-btn { background: transparent; border: none; color: var(--text-dim); cursor: pointer; padding: 0.2rem; transition: color 0.3s; }
         .icon-btn:hover { color: var(--emerald); }
-        .edit-controls { display: flex; gap: 0.3rem; align-items: center; }
+        .zone-metrics { background: rgba(0,0,0,0.4); padding: 0.8rem; border-radius: 12px; margin-top: 1rem; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.05); }
+        .metric-row { display: flex; justify-content: space-between; margin-bottom: 0.3rem; }
     </style>
 </head>
 <body>
@@ -136,16 +161,29 @@ $switches = array_filter($ha_entities, function($e) {
                             <?= htmlspecialchars($zone['name']) ?>
                             <button class="icon-btn" style="font-size:0.8rem;" onclick='showZoneModal(<?= $room['id'] ?>, "", <?= json_encode($zone) ?>)'>✎</button>
                         </strong>
-                        <form method="POST">
-                            <input type="hidden" name="action" value="delete_zone">
-                            <input type="hidden" name="id" value="<?= $zone['id'] ?>">
-                            <button class="btn-secondary" style="background:transparent; color:var(--danger); border:none; padding:0; font-size:1.2rem; cursor:pointer;">&times;</button>
-                        </form>
+                        <div style="display:flex; gap:0.5rem;">
+                            <form method="POST">
+                                <input type="hidden" name="action" value="prime">
+                                <input type="hidden" name="zone_id" value="<?= $zone['id'] ?>">
+                                <button type="submit" class="btn-secondary" style="background:var(--card-bg); color:var(--gold); border:1px solid var(--gold); padding:0.2rem 0.5rem; border-radius:8px; font-size:0.7rem; cursor:pointer;">PRIME</button>
+                            </form>
+                            <form method="POST">
+                                <input type="hidden" name="action" value="delete_zone">
+                                <input type="hidden" name="id" value="<?= $zone['id'] ?>">
+                                <button class="btn-secondary" style="background:transparent; color:var(--danger); border:none; padding:0; font-size:1.2rem; cursor:pointer;">&times;</button>
+                            </form>
+                        </div>
                     </div>
-                    <small style="display:block; margin: 0.5rem 0; color:var(--text-dim)">
-                        Pump: <?= $zone['pump_entity_id'] ?><br>
-                        Solenoid: <?= $zone['solenoid_entity_id'] ?: 'None' ?>
-                    </small>
+                    
+                    <div class="zone-metrics">
+                        <div class="metric-row"><span>Plants:</span> <strong><?= $zone['plants_count'] ?></strong></div>
+                        <div class="metric-row"><span>Drippers @ Plant:</span> <strong><?= $zone['drippers_per_plant'] ?></strong></div>
+                        <div class="metric-row"><span>Dripper Flow:</span> <strong><?= $zone['dripper_flow_rate'] ?> mL/h</strong></div>
+                        <?php
+                            $totalHourly = ($zone['plants_count'] * $zone['drippers_per_plant'] * $zone['dripper_flow_rate']);
+                        ?>
+                        <div class="metric-row" style="border-top:1px solid rgba(255,255,255,0.1); padding-top:0.3rem;"><span>Volume/Sec:</span> <strong><?= number_format($totalHourly/3600, 2) ?> mL</strong></div>
+                    </div>
 
                     <div class="event-list">
                         <?php
@@ -176,7 +214,11 @@ $switches = array_filter($ha_entities, function($e) {
                             </span>
                         </div>
                         <?php endforeach; ?>
-                        <button class="btn btn-secondary" style="width:100%; padding:0.4rem; font-size:0.8rem; margin-top:0.5rem;" onclick="showEventModal(<?= $zone['id'] ?>, '<?= addslashes($zone['name']) ?>')">Schedule Event</button>
+                        
+                        <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+                             <button class="btn btn-secondary" style="flex:1; padding:0.4rem; font-size:0.75rem;" onclick="showEventModal(<?= $zone['id'] ?>, '<?= addslashes($zone['name']) ?>')">Manual Entry</button>
+                             <button class="btn btn-primary" style="flex:1; padding:0.4rem; font-size:0.75rem;" onclick="showShotEngineModal(<?= $zone['id'] ?>, '<?= addslashes($zone['name']) ?>')">Shot Engine</button>
+                        </div>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -204,27 +246,42 @@ $switches = array_filter($ha_entities, function($e) {
 
     <div id="zoneModal" class="modal-backdrop">
         <div class="modal">
-            <h2 id="zoneModalTitle">Add Zone</h2>
+            <h2 id="zoneModalTitle">Zone Setup</h2>
             <form method="POST">
                 <input type="hidden" name="action" id="zoneAction" value="add_zone">
                 <input type="hidden" name="id" id="zoneIdInput">
                 <input type="hidden" name="room_id" id="modalRoomId">
                 <input type="text" name="name" id="zoneNameInput" placeholder="Zone Name" required>
                 
-                <label><small>Pump Entity</small></label>
-                <select name="pump_id" id="zonePumpInput" required>
-                    <?php foreach ($switches as $sw): ?>
-                    <option value="<?= $sw['entity_id'] ?>"><?= $sw['attributes']['friendly_name'] ?? $sw['entity_id'] ?></option>
-                    <?php endforeach; ?>
-                </select>
+                <div class="grid-2">
+                    <label><small>Pump</small>
+                        <select name="pump_id" id="zonePumpInput" required>
+                            <?php foreach ($switches as $sw): ?>
+                            <option value="<?= $sw['entity_id'] ?>"><?= $sw['attributes']['friendly_name'] ?? $sw['entity_id'] ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label><small>Solenoid (Opt)</small>
+                        <select name="solenoid_id" id="zoneSolenoidInput">
+                            <option value="">None</option>
+                            <?php foreach ($switches as $sw): ?>
+                            <option value="<?= $sw['entity_id'] ?>"><?= $sw['attributes']['friendly_name'] ?? $sw['entity_id'] ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                </div>
 
-                <label><small>Solenoid Entity (Optional)</small></label>
-                <select name="solenoid_id" id="zoneSolenoidInput">
-                    <option value="">None / Integrated</option>
-                    <?php foreach ($switches as $sw): ?>
-                    <option value="<?= $sw['entity_id'] ?>"><?= $sw['attributes']['friendly_name'] ?? $sw['entity_id'] ?></option>
-                    <?php endforeach; ?>
-                </select>
+                <div class="grid" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem;">
+                    <label><small>Plants</small>
+                        <input type="number" name="plants_count" id="zonePlantsInput" value="1" min="1">
+                    </label>
+                    <label><small>Drippers/P</small>
+                        <input type="number" name="drippers_per_plant" id="zoneDrippersInput" value="1" min="1">
+                    </label>
+                    <label><small>mL/h (per d)</small>
+                        <input type="number" name="flow_rate" id="zoneFlowInput" value="2000" min="0">
+                    </label>
+                </div>
 
                 <div class="grid-2">
                     <button type="button" class="btn btn-secondary" onclick="hideModal('zoneModal')">Cancel</button>
@@ -234,37 +291,61 @@ $switches = array_filter($ha_entities, function($e) {
         </div>
     </div>
 
-    <div id="eventModal" class="modal-backdrop">
+    <!-- Event Modals -->
+    <div id="shotEngineModal" class="modal-backdrop">
         <div class="modal">
-            <h2 id="eventModalTitle">Schedule Event</h2>
+            <h2>Shot Calculation Engine</h2>
             <form method="POST">
-                <input type="hidden" name="action" id="eventAction" value="add_event">
-                <input type="hidden" name="id" id="eventIdInput">
-                <input type="hidden" name="zone_id" id="modalZoneId">
+                <input type="hidden" name="action" value="shot_engine">
+                <input type="hidden" name="zone_id" id="shotZoneId">
                 
                 <label><small>Event Type</small></label>
-                <select name="type" id="eventTypeInput">
+                <select name="type">
                     <option value="P1">P1 (Generative)</option>
                     <option value="P2">P2 (Vegetative)</option>
                 </select>
 
-                <div class="grid-2">
+                <div class="grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem;">
+                    <div><label><small>Start Time</small><input type="time" name="start_time" required></label></div>
+                    <div><label><small>Shot Count</small><input type="number" name="shot_count" value="10" min="1" required></label></div>
+                </div>
+                
+                <div class="grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem;">
+                    <div><label><small>Interval (Mins)</small><input type="number" name="interval_mins" value="15" min="1" required></label></div>
                     <div>
-                        <label><small>Start Time</small></label>
-                        <input type="time" name="start_time" id="eventTimeInput" required>
-                    </div>
-                    <div>
-                        <label><small>Duration</small></label>
-                        <div style="display:flex; gap:0.5rem; align-items:center;">
-                            <input type="number" name="mins" id="eventMinsInput" value="0" min="0" required><small>m</small>
-                            <input type="number" name="secs" id="eventSecsInput" value="0" min="0" max="59" required><small>s</small>
+                        <label><small>Duration per Shot</small>
+                        <div style="display:flex; gap:0.3rem;">
+                            <input type="number" name="mins" value="0" min="0"><small>m</small>
+                            <input type="number" name="secs" value="30" min="0" max="59"><small>s</small>
                         </div>
+                        </label>
                     </div>
                 </div>
 
                 <div class="grid-2">
+                    <button type="button" class="btn btn-secondary" onclick="hideModal('shotEngineModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Generate Shots</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Other Modals keep as per standard edit/add logic -->
+    <div id="eventModal" class="modal-backdrop">
+        <div class="modal">
+            <h2 id="eventModalTitle">Manual Entry</h2>
+            <form method="POST">
+                <input type="hidden" name="action" id="eventAction" value="add_event">
+                <input type="hidden" name="id" id="eventIdInput">
+                <input type="hidden" name="zone_id" id="modalZoneId">
+                <select name="type" id="eventTypeInput"><option value="P1">P1</option><option value="P2">P2</option></select>
+                <div class="grid-2">
+                    <input type="time" name="start_time" id="eventTimeInput" required>
+                    <div style="display:flex; gap:0.3rem;"><input type="number" name="mins" id="eventMinsInput" value="0"><small>m</small><input type="number" name="secs" id="eventSecsInput" value="0"><small>s</small></div>
+                </div>
+                <div class="grid-2">
                     <button type="button" class="btn btn-secondary" onclick="hideModal('eventModal')">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="eventSubmitBtn">Save Event</button>
+                    <button type="submit" class="btn btn-primary" id="eventSubmitBtn">Save</button>
                 </div>
             </form>
         </div>
@@ -273,7 +354,6 @@ $switches = array_filter($ha_entities, function($e) {
     <script>
         function showModal(id) { document.getElementById(id).style.display = 'flex'; }
         function hideModal(id) { document.getElementById(id).style.display = 'none'; }
-        
         function showRoomModal(data = null) {
             if(data) {
                 document.getElementById('roomAction').value = 'edit_room';
@@ -281,17 +361,14 @@ $switches = array_filter($ha_entities, function($e) {
                 document.getElementById('roomNameInput').value = data.name;
                 document.getElementById('roomDescInput').value = data.description;
                 document.getElementById('roomModalTitle').innerText = 'Edit Room';
-                document.getElementById('roomSubmitBtn').innerText = 'Update Room';
             } else {
                 document.getElementById('roomAction').value = 'add_room';
                 document.getElementById('roomNameInput').value = '';
                 document.getElementById('roomDescInput').value = '';
-                document.getElementById('roomModalTitle').innerText = 'Add New Room';
-                document.getElementById('roomSubmitBtn').innerText = 'Create Room';
+                document.getElementById('roomModalTitle').innerText = 'Add Room';
             }
             showModal('roomModal');
         }
-
         function showZoneModal(roomId, name, data = null) {
             document.getElementById('modalRoomId').value = roomId;
             if(data) {
@@ -300,17 +377,17 @@ $switches = array_filter($ha_entities, function($e) {
                 document.getElementById('zoneNameInput').value = data.name;
                 document.getElementById('zonePumpInput').value = data.pump_entity_id;
                 document.getElementById('zoneSolenoidInput').value = data.solenoid_entity_id || '';
-                document.getElementById('zoneModalTitle').innerText = 'Edit Zone';
-                document.getElementById('zoneSubmitBtn').innerText = 'Update Zone';
+                document.getElementById('zonePlantsInput').value = data.plants_count;
+                document.getElementById('zoneDrippersInput').value = data.drippers_per_plant;
+                document.getElementById('zoneFlowInput').value = data.dripper_flow_rate;
+                document.getElementById('zoneModalTitle').innerText = 'Edit Zone Settings';
             } else {
                 document.getElementById('zoneAction').value = 'add_zone';
                 document.getElementById('zoneNameInput').value = '';
                 document.getElementById('zoneModalTitle').innerText = 'Add Zone to ' + name;
-                document.getElementById('zoneSubmitBtn').innerText = 'Add Zone';
             }
             showModal('zoneModal');
         }
-
         function showEventModal(zoneId, name, data = null) {
             document.getElementById('modalZoneId').value = zoneId;
             if(data) {
@@ -320,17 +397,17 @@ $switches = array_filter($ha_entities, function($e) {
                 document.getElementById('eventTimeInput').value = data.start_time;
                 document.getElementById('eventMinsInput').value = Math.floor(data.duration_seconds / 60);
                 document.getElementById('eventSecsInput').value = data.duration_seconds % 60;
-                document.getElementById('eventModalTitle').innerText = 'Edit Event';
-                document.getElementById('eventSubmitBtn').innerText = 'Update Event';
+                document.getElementById('eventModalTitle').innerText = 'Edit Entry';
             } else {
                 document.getElementById('eventAction').value = 'add_event';
                 document.getElementById('eventTimeInput').value = '';
-                document.getElementById('eventMinsInput').value = '0';
-                document.getElementById('eventSecsInput').value = '0';
-                document.getElementById('eventModalTitle').innerText = 'Schedule: ' + name;
-                document.getElementById('eventSubmitBtn').innerText = 'Save Event';
+                showModal('eventModal');
             }
             showModal('eventModal');
+        }
+        function showShotEngineModal(zoneId, name) {
+            document.getElementById('shotZoneId').value = zoneId;
+            showModal('shotEngineModal');
         }
     </script>
 </body>
