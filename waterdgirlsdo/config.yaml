@@ -1,0 +1,24 @@
+name: "Waterd Girls Do"
+description: "Growers Regulatory Assistance & Compliance engine - Waterd Girls Do Edition"
+url: "https://github.com/goatb/waterdgirlsdo"
+codenotary: tech@waterdgirlsdo.com
+version: "0.11.1"
+slug: "waterdgirlsdo"
+panel_icon: mdi:water
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+ingress: true
+ingress_port: 8420
+hassio_api: true
+homeassistant_api: true
+startup: application
+
+map:
+  - type: addon_config
+    read_only: False
+    path: /waterdgirlsdo_config
