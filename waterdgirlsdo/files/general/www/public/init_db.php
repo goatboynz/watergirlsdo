@@ -13,23 +13,31 @@ function initializeDatabase($dbPath = '/data/waterdgirlsdo.db') {
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->exec('PRAGMA foreign_keys = ON;');
 
-        // Migrations
+        // --- MIGRATIONS ---
+
+        // 1. Rooms Migrations
         $res = $pdo->query("PRAGMA table_info(Rooms)")->fetchAll(PDO::FETCH_ASSOC);
-        $columns = array_column($res, 'name');
-        if (!in_array('lights_on', $columns)) {
-            $pdo->exec("ALTER TABLE Rooms ADD COLUMN lights_on TIME DEFAULT '08:00'");
-            $pdo->exec("ALTER TABLE Rooms ADD COLUMN lights_off TIME DEFAULT '20:00'");
-            $pdo->exec("ALTER TABLE Rooms ADD COLUMN temp_sensor_id TEXT");
-            $pdo->exec("ALTER TABLE Rooms ADD COLUMN humidity_sensor_id TEXT");
-        }
+        $cols = array_column($res, 'name');
+        if (!in_array('lights_on', $cols)) $pdo->exec("ALTER TABLE Rooms ADD COLUMN lights_on TIME DEFAULT '08:00'");
+        if (!in_array('lights_off', $cols)) $pdo->exec("ALTER TABLE Rooms ADD COLUMN lights_off TIME DEFAULT '20:00'");
+        if (!in_array('temp_sensor_id', $cols)) $pdo->exec("ALTER TABLE Rooms ADD COLUMN temp_sensor_id TEXT");
+        if (!in_array('humidity_sensor_id', $cols)) $pdo->exec("ALTER TABLE Rooms ADD COLUMN humidity_sensor_id TEXT");
 
+        // 2. Zones Migrations
         $res = $pdo->query("PRAGMA table_info(Zones)")->fetchAll(PDO::FETCH_ASSOC);
-        $columns = array_column($res, 'name');
-        if (!in_array('moisture_sensor_id', $columns)) {
-            $pdo->exec("ALTER TABLE Zones ADD COLUMN moisture_sensor_id TEXT");
-            $pdo->exec("ALTER TABLE Zones ADD COLUMN ec_sensor_id TEXT");
-        }
+        $cols = array_column($res, 'name');
+        if (!in_array('plants_count', $cols)) $pdo->exec("ALTER TABLE Zones ADD COLUMN plants_count INTEGER DEFAULT 1");
+        if (!in_array('drippers_per_plant', $cols)) $pdo->exec("ALTER TABLE Zones ADD COLUMN drippers_per_plant INTEGER DEFAULT 1");
+        if (!in_array('dripper_flow_rate', $cols)) $pdo->exec("ALTER TABLE Zones ADD COLUMN dripper_flow_rate FLOAT DEFAULT 2000");
+        if (!in_array('moisture_sensor_id', $cols)) $pdo->exec("ALTER TABLE Zones ADD COLUMN moisture_sensor_id TEXT");
+        if (!in_array('ec_sensor_id', $cols)) $pdo->exec("ALTER TABLE Zones ADD COLUMN ec_sensor_id TEXT");
 
+        // 3. IrrigationLogs Migrations
+        $res = $pdo->query("PRAGMA table_info(IrrigationLogs)")->fetchAll(PDO::FETCH_ASSOC);
+        $cols = array_column($res, 'name');
+        if (!in_array('volume_ml', $cols)) $pdo->exec("ALTER TABLE IrrigationLogs ADD COLUMN volume_ml FLOAT DEFAULT 0");
+
+        // --- CREATE TABLES (If none exist) ---
         $createTablesSQL = [
             "CREATE TABLE IF NOT EXISTS Rooms (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +80,7 @@ function initializeDatabase($dbPath = '/data/waterdgirlsdo.db') {
                 event_type TEXT,
                 start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
                 duration_seconds INTEGER,
-                volume_ml FLOAT,
+                volume_ml FLOAT DEFAULT 0,
                 FOREIGN KEY (zone_id) REFERENCES Zones(id) ON DELETE CASCADE
             );"
         ];
