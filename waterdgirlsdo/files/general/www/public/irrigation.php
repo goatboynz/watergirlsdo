@@ -133,6 +133,13 @@ function getUpcomingEvents($pdo, $room_id) {
                         foreach ($events as $event): ?>
                         <div class="event-item">
                             <span>
+                                <form method="POST" style="display:inline; margin:0;">
+                                    <input type="hidden" name="action" value="toggle_event">
+                                    <input type="hidden" name="id" value="<?= $event['id'] ?>">
+                                    <button type="submit" class="badge" style="background: <?= $event['enabled'] ? 'var(--emerald)' : 'var(--danger)' ?>; color: black; border:none; cursor:pointer; font-size:0.6rem; padding: 0.1rem 0.3rem; margin-right: 0.5rem;">
+                                        <?= $event['enabled'] ? 'ON' : 'OFF' ?>
+                                    </button>
+                                </form>
                                 <span class="badge badge-<?= strtolower($event['event_type']) ?>"><?= $event['event_type'] ?></span>
                                 <strong><?= $event['start_time'] ?></strong>
                             </span>

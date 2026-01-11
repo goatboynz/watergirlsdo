@@ -46,6 +46,16 @@ function initializeDatabase($dbPath = '/www/public/waterdgirlsdo.db') {
                 days_of_week TEXT DEFAULT '1,2,3,4,5,6,7', -- 1=Mon, 7=Sun
                 enabled INTEGER DEFAULT 1,
                 FOREIGN KEY (zone_id) REFERENCES Zones(id) ON DELETE CASCADE
+            );",
+
+            // Irrigation: History/Logs
+            "CREATE TABLE IF NOT EXISTS IrrigationLogs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                zone_id INTEGER NOT NULL,
+                event_type TEXT,
+                start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                duration_seconds INTEGER,
+                FOREIGN KEY (zone_id) REFERENCES Zones(id) ON DELETE CASCADE
             );"
         ];
 

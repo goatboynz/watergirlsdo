@@ -65,6 +65,16 @@ def run_irrigation(room_id, zone_id, pump_id, solenoid_id, duration):
             time.sleep(2) # Pressure release
             call_ha_service(solenoid_id, 'off')
             
+        # 6. Log to DB
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO IrrigationLogs (zone_id, duration_seconds) VALUES (?, ?)", (zone_id, duration))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"Logging Error: {e}")
+
         print(f"[{datetime.datetime.now()}] Finished Zone {zone_id}")
 
 def main():
