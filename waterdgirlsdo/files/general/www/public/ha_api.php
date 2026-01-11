@@ -54,4 +54,22 @@ function ha_set_state($entity_id, $state) {
 
     return json_decode($response, true);
 }
+
+function ha_get_history($entity_ids, $start_time_iso) {
+    $token = get_ha_api_token();
+    // Example start_time_iso: 2026-01-11T08:00:00Z
+    $url = get_ha_api_url() . '/history/period/' . urlencode($start_time_iso) . '?filter_entity_id=' . implode(',', $entity_ids);
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Authorization: Bearer ' . $token,
+        'Content-Type: application/json'
+    ]);
+
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    return json_decode($response, true);
+}
 ?>
