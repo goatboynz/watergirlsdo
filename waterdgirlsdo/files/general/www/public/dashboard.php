@@ -161,7 +161,7 @@ $rooms = $pdo->query("SELECT * FROM Rooms ORDER BY name ASC")->fetchAll(PDO::FET
                             <div class="room-stat-item"><small>Soil VWC</small><span><?= $vwc ?>%</span></div>
                             <div class="room-stat-item"><small>Soil EC</small><span><?= $ec ?></span></div>
                         </div>
-                        <a href="irrigation.php#room-group-<?= $r['id'] ?>" class="btn btn-secondary" style="width:100%; margin-top:1rem; padding:0.5rem;">Control Room</a>
+                        <a href="room.php?id=<?= $r['id'] ?>" class="btn btn-secondary" style="width:100%; margin-top:1rem; padding:0.5rem;">Control Room</a>
                     </article>
                     <?php endforeach; endif; ?>
                 </div>

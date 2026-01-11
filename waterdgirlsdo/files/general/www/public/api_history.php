@@ -7,10 +7,10 @@ $pdo = initializeDatabase();
 
 header('Content-Type: application/json');
 
-$entity_id = $_GET['entity_id'] ?? '';
+$entity_ids = explode(',', $_GET['entity_id'] ?? '');
 $range = $_GET['range'] ?? '24h'; // 1h, 24h, 7d
 
-if (!$entity_id) {
+if (empty($entity_ids)) {
     echo json_encode(['error' => 'Missing entity_id']);
     exit;
 }
@@ -24,20 +24,27 @@ switch ($range) {
 }
 
 $start_time = $now->format('Y-m-d\TH:i:s\Z');
-$history = ha_get_history([$entity_id], $start_time);
+$history = ha_get_history($entity_ids, $start_time);
 
 $labels = [];
-$data = [];
+$datasets = [];
 
-if ($history && is_array($history) && isset($history[0])) {
-    foreach ($history[0] as $entry) {
-        $labels[] = date('H:i', strtotime($entry['last_changed']));
-        $val = $entry['state'];
-        $data[] = is_numeric($val) ? round(floatval($val), 1) : 0;
+if ($history && is_array($history)) {
+    foreach ($history as $idx => $entity_history) {
+        $entity_id = $entity_ids[$idx];
+        $data = [];
+        foreach ($entity_history as $entry) {
+            if ($idx === 0) {
+                $labels[] = date('H:i', strtotime($entry['last_changed']));
+            }
+            $val = $entry['state'];
+            $data[] = is_numeric($val) ? round(floatval($val), 1) : 0;
+        }
+        $datasets[$entity_id] = $data;
     }
 }
 
 echo json_encode([
     'labels' => $labels,
-    'data' => $data
+    'datasets' => $datasets
 ]);

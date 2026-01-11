@@ -22,6 +22,10 @@ function initializeDatabase($dbPath = '/data/waterdgirlsdo.db') {
         if (!in_array('lights_off', $cols)) $pdo->exec("ALTER TABLE Rooms ADD COLUMN lights_off TIME DEFAULT '20:00'");
         if (!in_array('temp_sensor_id', $cols)) $pdo->exec("ALTER TABLE Rooms ADD COLUMN temp_sensor_id TEXT");
         if (!in_array('humidity_sensor_id', $cols)) $pdo->exec("ALTER TABLE Rooms ADD COLUMN humidity_sensor_id TEXT");
+        for($i=1; $i<=5; $i++) {
+            if (!in_array("moisture_sensor_$i", $cols)) $pdo->exec("ALTER TABLE Rooms ADD COLUMN moisture_sensor_$i TEXT");
+            if (!in_array("ec_sensor_$i", $cols)) $pdo->exec("ALTER TABLE Rooms ADD COLUMN ec_sensor_$i TEXT");
+        }
 
         // 2. Zones Migrations
         $res = $pdo->query("PRAGMA table_info(Zones)")->fetchAll(PDO::FETCH_ASSOC);
@@ -46,7 +50,9 @@ function initializeDatabase($dbPath = '/data/waterdgirlsdo.db') {
                 lights_on TIME DEFAULT '08:00',
                 lights_off TIME DEFAULT '20:00',
                 temp_sensor_id TEXT,
-                humidity_sensor_id TEXT
+                humidity_sensor_id TEXT,
+                moisture_sensor_1 TEXT, moisture_sensor_2 TEXT, moisture_sensor_3 TEXT, moisture_sensor_4 TEXT, moisture_sensor_5 TEXT,
+                ec_sensor_1 TEXT, ec_sensor_2 TEXT, ec_sensor_3 TEXT, ec_sensor_4 TEXT, ec_sensor_5 TEXT
             );",
 
             "CREATE TABLE IF NOT EXISTS Zones (
