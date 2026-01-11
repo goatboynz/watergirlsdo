@@ -3,7 +3,7 @@
 date_default_timezone_set('Pacific/Auckland'); 
 
 
-function initializeDatabase($dbPath = '/www/public/waterdgirlsdo.db') {
+function initializeDatabase($dbPath = '/data/waterdgirlsdo.db') {
     try {
         $dir = dirname($dbPath);
         if (!is_dir($dir)) {

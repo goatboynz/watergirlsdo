@@ -36,6 +36,7 @@ RUN apk -U upgrade && apk add --no-cache \
 
 COPY files/general files/php83 /
 RUN chmod +x /etc/services.d/*/run /etc/services.d/*/finish
+RUN chmod +x /etc/cont-init.d/*.sh
 RUN chown -R php:nginx /www/public
 RUN chmod -R 775 /www/public
 

@@ -6,7 +6,7 @@ import os
 import urllib.request
 import threading
 
-DB_PATH = '/www/public/waterdgirlsdo.db'
+DB_PATH = '/data/waterdgirlsdo.db'
 HA_URL = 'http://supervisor/core/api'
 HA_TOKEN = os.environ.get('SUPERVISOR_TOKEN')
 
